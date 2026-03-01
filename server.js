@@ -22,24 +22,17 @@ const linkCache = new LRUCache({
     ttl: 1000 * 60 * 60
 });
 
-// MongoDB Connection (Gezry Solution: Long-form Connection String)
-// Using exact shard addresses from your logs to bypass DNS SRV issues on Render
-const longFormURI = 'mongodb://mina15g4y_db_user:hTZ4HjZuEKiaHL8Z@' +
-    'ac-swlkwrh-shard-00-00.8mkolt0.mongodb.net:27017,' +
-    'ac-swlkwrh-shard-00-01.8mkolt0.mongodb.net:27017,' +
-    'ac-swlkwrh-shard-00-02.8mkolt0.mongodb.net:27017' +
-    '/dar_alkalam?replicaSet=atlas-esong9-shard-0&ssl=true&authSource=admin';
+// MongoDB Connection (Standard SRV Solution)
+const standardURI = 'mongodb+srv://mina15g4y_db_user:hTZ4HjZuEKiaHL8Z@cluster0.8mkolt0.mongodb.net/dar_alkalam?retryWrites=true&w=majority&appName=Cluster0';
 
-const currentURI = process.env.MONGODB_URI || longFormURI;
-console.log('📡 Attempting connection with URI:', currentURI.replace(/:([^@]+)@/, ':****@')); // Mask password
-mongoose.connect(currentURI, {
-    family: 4, // Force IPv4
-    serverSelectionTimeoutMS: 15000 // More time for Render to decide
+mongoose.connect(process.env.MONGODB_URI || standardURI, {
+    family: 4, // Prevents IPv6 connection attempts which Atlas M0 rejects
+    serverSelectionTimeoutMS: 15000
 })
-    .then(() => console.log('✅ Connected to MongoDB Atlas (via LONG-FORM URI)'))
+    .then(() => console.log('✅ Connected to MongoDB Atlas (via SRV Standard)'))
     .catch(err => {
         console.error('❌ MongoDB Connection Error:', err.message);
-        console.error('👉 Ensure 0.0.0.0/0 is ACTIVE in MongoDB Atlas Network Access');
+        console.error('👉 Verify 0.0.0.0/0 is ACTIVE in Atlas Network Access');
     });
 
 // --- Database Schemas ---
