@@ -30,7 +30,9 @@ const longFormURI = 'mongodb://mina15g4y_db_user:hTZ4HjZuEKiaHL8Z@' +
     'ac-swlkwrh-shard-00-02.8mkolt0.mongodb.net:27017' +
     '/dar_alkalam?replicaSet=atlas-esong9-shard-0&ssl=true&authSource=admin';
 
-mongoose.connect(process.env.MONGODB_URI || longFormURI, {
+const currentURI = process.env.MONGODB_URI || longFormURI;
+console.log('📡 Attempting connection with URI:', currentURI.replace(/:([^@]+)@/, ':****@')); // Mask password
+mongoose.connect(currentURI, {
     family: 4, // Force IPv4
     serverSelectionTimeoutMS: 15000 // More time for Render to decide
 })
