@@ -21,8 +21,9 @@ const linkCache = new LRUCache({
     ttl: 1000 * 60 * 60
 });
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
+// MongoDB Connection (Hardcoded fallback for deployment reliability)
+const defaultMongoURI = 'mongodb+srv://mina15g4y_db_user:hTZ4HjZuEKiaHL8Z@cluster0.8mkolt0.mongodb.net/dar_alkalam?retryWrites=true&w=majority&appName=Cluster0';
+mongoose.connect(process.env.MONGODB_URI || defaultMongoURI)
     .then(() => console.log('✅ Connected to MongoDB Atlas'))
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
