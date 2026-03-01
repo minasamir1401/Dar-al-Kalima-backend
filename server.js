@@ -9,6 +9,7 @@ const { LRUCache } = require('lru-cache');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+console.log('🚀 Server Version: v3.1 (Long-form URI + IPv4 Force)');
 
 // Bandwidth compression & Middleware
 app.use(compression());
