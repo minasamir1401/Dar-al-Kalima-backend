@@ -277,9 +277,13 @@ app.get('/api/download', async (req, res) => {
 
     try {
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+        if (!fileUrl.startsWith('http') && fileUrl.includes('%3A%2F%2F')) {
+            fileUrl = decodeURIComponent(fileUrl);
+        }
+
         if (!fileUrl.startsWith('http')) {
-            console.error('❌ Invalid download URL attempted:', fileUrl);
-            return res.status(400).send('رابط غير صالح للتحميل.');
+            console.error('❌ Malformed URL received:', fileUrl);
+            return res.status(400).send('عذراً، هذا الرابط غير صالح (Malformed Link). يرجى تجربة كتاب آخر أو تحديث الصفحة.');
         }
 
         const response = await axios({
