@@ -1,6 +1,6 @@
 # Use official Node.js lightweight image
 FROM node:20-slim
-LABEL cache-bust="v4-postgres-build"
+LABEL cache-bust="v3-fresh-build"
 
 # Set working directory inside the container
 WORKDIR /app

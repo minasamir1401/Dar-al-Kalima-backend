@@ -1,15 +1,15 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const compression = require('compression');
 const { LRUCache } = require('lru-cache');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-console.log('🚀 Server Version: v3.1 (Long-form URI + IPv4 Force)');
+console.log('🚀 Server Version: v4.0 (Neon PostgreSQL Infrastructure)');
 
 // Bandwidth compression & Middleware
 app.use(compression());
@@ -22,42 +22,15 @@ const linkCache = new LRUCache({
     ttl: 1000 * 60 * 60
 });
 
-// MongoDB Connection (Standard SRV Solution)
-const standardURI = 'mongodb+srv://mina15g4y_db_user:hTZ4HjZuEKiaHL8Z@cluster0.8mkolt0.mongodb.net/dar_alkalam?retryWrites=true&w=majority&appName=Cluster0';
-
-mongoose.connect(process.env.MONGODB_URI || standardURI, {
-    family: 4, // Prevents IPv6 connection attempts which Atlas M0 rejects
-    serverSelectionTimeoutMS: 15000
-})
-    .then(() => console.log('✅ Connected to MongoDB Atlas (via SRV Standard)'))
-    .catch(err => {
-        console.error('❌ MongoDB Connection Error:', err.message);
-        console.error('👉 Verify 0.0.0.0/0 is ACTIVE in Atlas Network Access');
-    });
-
-// --- Database Schemas ---
-const bookSchema = new mongoose.Schema({
-    title: String, url: String, image: String, category: String, download_url: String
-});
-const courseSchema = new mongoose.Schema({
-    title: String, url: String, image: String, instructor: String, lessons: String, category: String, lessons_data: String
-});
-const churchVideoSchema = new mongoose.Schema({
-    title: String, videoId: String, collection: String
-});
-const podcastSchema = new mongoose.Schema({
-    seriesTitle: String, episodeTitle: String, videoId: String
-});
-const kidsVideoSchema = new mongoose.Schema({
-    sectionTitle: String, title: String, videoId: String, icon: String, color: String
+// Neon PostgreSQL Connection
+const pgURI = 'postgresql://neondb_owner:npg_I9w6ahWPzVuv@ep-rough-violet-ai9mop1v-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require';
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || pgURI,
+    ssl: true
 });
 
-// Models
-const Book = mongoose.model('Book', bookSchema);
-const Course = mongoose.model('Course', courseSchema);
-const ChurchVideo = mongoose.model('ChurchVideo', churchVideoSchema);
-const Podcast = mongoose.model('Podcast', podcastSchema);
-const KidsVideo = mongoose.model('KidsVideo', kidsVideoSchema);
+pool.on('connect', () => console.log('✅ Connected to Neon PostgreSQL'));
+pool.on('error', (err) => console.error('❌ PG Pool Error:', err));
 
 // Helper for clean Arabic Filenames
 function getCleanFileName(fileUrl, contentType) {
@@ -86,28 +59,36 @@ function getCleanFileName(fileUrl, contentType) {
 // Books
 app.get('/api/books', async (req, res) => {
     try {
-        const books = await Book.find({});
-        res.json(books.map(b => ({ ...b.toObject(), id: b._id })));
+        const result = await pool.query('SELECT * FROM books ORDER BY id DESC');
+        res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/books', async (req, res) => {
     try {
-        const book = await Book.create(req.body);
-        res.json({ id: book._id });
+        const { title, url, image, category, download_url } = req.body;
+        const result = await pool.query(
+            'INSERT INTO books (title, url, image, category, download_url) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [title, url, image, category, download_url]
+        );
+        res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/books/:id', async (req, res) => {
     try {
-        await Book.findByIdAndUpdate(req.params.id, req.body);
+        const { title, url, image, category, download_url } = req.body;
+        await pool.query(
+            'UPDATE books SET title=$1, url=$2, image=$3, category=$4, download_url=$5 WHERE id=$6',
+            [title, url, image, category, download_url, req.params.id]
+        );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/books/:id', async (req, res) => {
     try {
-        await Book.findByIdAndDelete(req.params.id);
+        await pool.query('DELETE FROM books WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -115,41 +96,49 @@ app.delete('/api/books/:id', async (req, res) => {
 // Courses
 app.get('/api/courses', async (req, res) => {
     try {
-        const courses = await Course.find({});
-        res.json(courses.map(c => ({ ...c.toObject(), id: c._id })));
+        const result = await pool.query('SELECT * FROM courses ORDER BY id DESC');
+        res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/courses/:id', async (req, res) => {
     try {
-        const course = await Course.findById(req.params.id);
-        if (!course) return res.status(404).send('Course not found');
-        const courseObj = course.toObject();
-        if (courseObj.lessons_data) {
-            try { courseObj.lessons_data = JSON.parse(courseObj.lessons_data); }
-            catch (e) { courseObj.lessons_data = []; }
+        const result = await pool.query('SELECT * FROM courses WHERE id=$1', [req.params.id]);
+        if (result.rows.length === 0) return res.status(404).send('Course not found');
+        const course = result.rows[0];
+        if (course.lessons_data) {
+            try { course.lessons_data = JSON.parse(course.lessons_data); }
+            catch (e) { course.lessons_data = []; }
         }
-        res.json({ ...courseObj, id: course._id });
+        res.json(course);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/courses', async (req, res) => {
     try {
-        const course = await Course.create(req.body);
-        res.json({ id: course._id });
+        const { title, url, image, instructor, lessons, category, lessons_data } = req.body;
+        const result = await pool.query(
+            'INSERT INTO courses (title, url, image, instructor, lessons, category, lessons_data) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+            [title, url, image, instructor, lessons, category, lessons_data]
+        );
+        res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/courses/:id', async (req, res) => {
     try {
-        await Course.findByIdAndUpdate(req.params.id, req.body);
+        const { title, url, image, instructor, lessons, category, lessons_data } = req.body;
+        await pool.query(
+            'UPDATE courses SET title=$1, url=$2, image=$3, instructor=$4, lessons=$5, category=$6, lessons_data=$7 WHERE id=$8',
+            [title, url, image, instructor, lessons, category, lessons_data, req.params.id]
+        );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/courses/:id', async (req, res) => {
     try {
-        await Course.findByIdAndDelete(req.params.id);
+        await pool.query('DELETE FROM courses WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -158,41 +147,47 @@ app.delete('/api/courses/:id', async (req, res) => {
 app.get('/api/search', async (req, res) => {
     const q = req.query.q || '';
     try {
-        const books = await Book.find({
-            $or: [
-                { title: { $regex: q, $options: 'i' } },
-                { category: { $regex: q, $options: 'i' } }
-            ]
-        });
-        res.json(books.map(b => ({ ...b.toObject(), id: b._id })));
+        const result = await pool.query(
+            "SELECT * FROM books WHERE title ILIKE $1 OR category ILIKE $1 ORDER BY id DESC",
+            [`%${q}%`]
+        );
+        res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Church Videos
 app.get('/api/church-videos', async (req, res) => {
     try {
-        const videos = await ChurchVideo.find({});
-        res.json(videos.map(v => ({ ...v.toObject(), id: v._id })));
+        const result = await pool.query('SELECT * FROM church_videos ORDER BY id DESC');
+        res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/church-videos', async (req, res) => {
     try {
-        const video = await ChurchVideo.create(req.body);
-        res.json({ id: video._id });
+        const { title, video_id, collection } = req.body;
+        const result = await pool.query(
+            'INSERT INTO church_videos (title, video_id, collection) VALUES ($1, $2, $3) RETURNING id',
+            [title, video_id, collection]
+        );
+        res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/church-videos/:id', async (req, res) => {
     try {
-        await ChurchVideo.findByIdAndUpdate(req.params.id, req.body);
+        const { title, video_id, collection } = req.body;
+        await pool.query(
+            'UPDATE church_videos SET title=$1, video_id=$2, collection=$3 WHERE id=$4',
+            [title, video_id, collection, req.params.id]
+        );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/church-videos/:id', async (req, res) => {
     try {
-        await ChurchVideo.findByIdAndDelete(req.params.id);
+        await pool.query('DELETE FROM church_videos WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -200,28 +195,36 @@ app.delete('/api/church-videos/:id', async (req, res) => {
 // Podcasts
 app.get('/api/podcasts', async (req, res) => {
     try {
-        const podcasts = await Podcast.find({});
-        res.json(podcasts.map(p => ({ ...p.toObject(), id: p._id })));
+        const result = await pool.query('SELECT * FROM podcasts ORDER BY id DESC');
+        res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/podcasts', async (req, res) => {
     try {
-        const p = await Podcast.create(req.body);
-        res.json({ id: p._id });
+        const { series_title, episode_title, video_id } = req.body;
+        const result = await pool.query(
+            'INSERT INTO podcasts (series_title, episode_title, video_id) VALUES ($1, $2, $3) RETURNING id',
+            [series_title, episode_title, video_id]
+        );
+        res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/podcasts/:id', async (req, res) => {
     try {
-        await Podcast.findByIdAndUpdate(req.params.id, req.body);
+        const { series_title, episode_title, video_id } = req.body;
+        await pool.query(
+            'UPDATE podcasts SET series_title=$1, episode_title=$2, video_id=$3 WHERE id=$4',
+            [series_title, episode_title, video_id, req.params.id]
+        );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/podcasts/:id', async (req, res) => {
     try {
-        await Podcast.findByIdAndDelete(req.params.id);
+        await pool.query('DELETE FROM podcasts WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -229,28 +232,36 @@ app.delete('/api/podcasts/:id', async (req, res) => {
 // Kids Videos
 app.get('/api/kids-videos', async (req, res) => {
     try {
-        const videos = await KidsVideo.find({});
-        res.json(videos.map(v => ({ ...v.toObject(), id: v._id })));
+        const result = await pool.query('SELECT * FROM kids_videos ORDER BY id DESC');
+        res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/kids-videos', async (req, res) => {
     try {
-        const v = await KidsVideo.create(req.body);
-        res.json({ id: v._id });
+        const { section_title, title, video_id, icon, color } = req.body;
+        const result = await pool.query(
+            'INSERT INTO kids_videos (section_title, title, video_id, icon, color) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [section_title, title, video_id, icon, color]
+        );
+        res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/kids-videos/:id', async (req, res) => {
     try {
-        await KidsVideo.findByIdAndUpdate(req.params.id, req.body);
+        const { section_title, title, video_id, icon, color } = req.body;
+        await pool.query(
+            'UPDATE kids_videos SET section_title=$1, title=$2, video_id=$3, icon=$4, color=$5 WHERE id=$6',
+            [section_title, title, video_id, icon, color, req.params.id]
+        );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/kids-videos/:id', async (req, res) => {
     try {
-        await KidsVideo.findByIdAndDelete(req.params.id);
+        await pool.query('DELETE FROM kids_videos WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -330,8 +341,9 @@ app.get('/api/download', async (req, res) => {
 // SCRARE LESSONS from m3aarf
 app.get('/api/courses/:id/scrape', async (req, res) => {
     try {
-        const course = await Course.findById(req.params.id);
-        if (!course) return res.status(404).send('Course not found');
+        const result = await pool.query('SELECT * FROM courses WHERE id=$1', [req.params.id]);
+        if (result.rows.length === 0) return res.status(404).send('Course not found');
+        const course = result.rows[0];
 
         const m3aarfUrl = course.url;
         const m3aarfIdMatch = m3aarfUrl.match(/\/certificate\/(\d+)/);
@@ -370,8 +382,7 @@ app.get('/api/courses/:id/scrape', async (req, res) => {
             }
         }
 
-        course.lessons_data = JSON.stringify(lessons);
-        await course.save();
+        await pool.query('UPDATE courses SET lessons_data=$1 WHERE id=$2', [JSON.stringify(lessons), req.params.id]);
         res.json({ success: true, lessonsCount: lessons.length });
     } catch (scrapeErr) { res.status(500).json({ error: scrapeErr.message }); }
 });
