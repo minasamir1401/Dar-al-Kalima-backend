@@ -158,17 +158,17 @@ app.get('/api/search', async (req, res) => {
 // Church Videos
 app.get('/api/church-videos', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM church_videos ORDER BY id DESC');
+        const result = await pool.query('SELECT id, title, video_id AS "videoId", collection FROM church_videos ORDER BY id DESC');
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/church-videos', async (req, res) => {
     try {
-        const { title, video_id, collection } = req.body;
+        const { title, videoId, collection } = req.body;
         const result = await pool.query(
             'INSERT INTO church_videos (title, video_id, collection) VALUES ($1, $2, $3) RETURNING id',
-            [title, video_id, collection]
+            [title, videoId, collection]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -176,10 +176,10 @@ app.post('/api/church-videos', async (req, res) => {
 
 app.put('/api/church-videos/:id', async (req, res) => {
     try {
-        const { title, video_id, collection } = req.body;
+        const { title, videoId, collection } = req.body;
         await pool.query(
             'UPDATE church_videos SET title=$1, video_id=$2, collection=$3 WHERE id=$4',
-            [title, video_id, collection, req.params.id]
+            [title, videoId, collection, req.params.id]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -195,17 +195,17 @@ app.delete('/api/church-videos/:id', async (req, res) => {
 // Podcasts
 app.get('/api/podcasts', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM podcasts ORDER BY id DESC');
+        const result = await pool.query('SELECT id, series_title AS "seriesTitle", episode_title AS "episodeTitle", video_id AS "videoId" FROM podcasts ORDER BY id DESC');
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/podcasts', async (req, res) => {
     try {
-        const { series_title, episode_title, video_id } = req.body;
+        const { seriesTitle, episodeTitle, videoId } = req.body;
         const result = await pool.query(
             'INSERT INTO podcasts (series_title, episode_title, video_id) VALUES ($1, $2, $3) RETURNING id',
-            [series_title, episode_title, video_id]
+            [seriesTitle, episodeTitle, videoId]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -213,10 +213,10 @@ app.post('/api/podcasts', async (req, res) => {
 
 app.put('/api/podcasts/:id', async (req, res) => {
     try {
-        const { series_title, episode_title, video_id } = req.body;
+        const { seriesTitle, episodeTitle, videoId } = req.body;
         await pool.query(
             'UPDATE podcasts SET series_title=$1, episode_title=$2, video_id=$3 WHERE id=$4',
-            [series_title, episode_title, video_id, req.params.id]
+            [seriesTitle, episodeTitle, videoId, req.params.id]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -232,17 +232,17 @@ app.delete('/api/podcasts/:id', async (req, res) => {
 // Kids Videos
 app.get('/api/kids-videos', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM kids_videos ORDER BY id DESC');
+        const result = await pool.query('SELECT id, section_title AS "sectionTitle", title, video_id AS "videoId", icon, color FROM kids_videos ORDER BY id DESC');
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/kids-videos', async (req, res) => {
     try {
-        const { section_title, title, video_id, icon, color } = req.body;
+        const { sectionTitle, title, videoId, icon, color } = req.body;
         const result = await pool.query(
             'INSERT INTO kids_videos (section_title, title, video_id, icon, color) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-            [section_title, title, video_id, icon, color]
+            [sectionTitle, title, videoId, icon, color]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -250,10 +250,10 @@ app.post('/api/kids-videos', async (req, res) => {
 
 app.put('/api/kids-videos/:id', async (req, res) => {
     try {
-        const { section_title, title, video_id, icon, color } = req.body;
+        const { sectionTitle, title, videoId, icon, color } = req.body;
         await pool.query(
             'UPDATE kids_videos SET section_title=$1, title=$2, video_id=$3, icon=$4, color=$5 WHERE id=$6',
-            [section_title, title, video_id, icon, color, req.params.id]
+            [sectionTitle, title, videoId, icon, color, req.params.id]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
