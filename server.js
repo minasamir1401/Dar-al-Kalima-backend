@@ -277,10 +277,15 @@ app.get('/api/download', async (req, res) => {
 
     try {
         const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+        if (!fileUrl.startsWith('http')) {
+            console.error('❌ Invalid download URL attempted:', fileUrl);
+            return res.status(400).send('رابط غير صالح للتحميل.');
+        }
+
         const response = await axios({
             method: 'get', url: fileUrl, responseType: 'stream',
-            headers: { 'User-Agent': userAgent }, maxRedirects: 10, timeout: 10000
-        });
+            headers: { 'User-Agent': userAgent }, maxRedirects: 10, timeout: 15000
+        }).catch(err => { throw new Error(`Fetch failed: ${err.message}`); });
 
         const contentType = response.headers['content-type'] || '';
         if (!contentType.includes('text/html')) {
@@ -293,15 +298,17 @@ app.get('/api/download', async (req, res) => {
         let html = '';
         response.data.on('data', chunk => {
             html += chunk;
-            if (html.length > 500000) response.data.destroy();
+            if (html.length > 1000000) response.data.destroy(); // Limit to 1MB
         });
         await new Promise(resolve => response.data.on('end', resolve));
 
         const $ = cheerio.load(html);
         let foundLink = '';
+        const currentHostname = new URL(fileUrl).hostname;
+
         $('a[href]').each((i, el) => {
             const h = $(el).attr('href');
-            if (h && (h.includes('mediafire.com') || (h.toLowerCase().endsWith('.pdf') && !h.includes(new URL(fileUrl).hostname)))) {
+            if (h && (h.includes('mediafire.com') || (h.toLowerCase().endsWith('.pdf') && !h.includes(currentHostname)))) {
                 foundLink = h;
                 return false;
             }
