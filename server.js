@@ -266,6 +266,43 @@ app.delete('/api/kids-videos/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Subjects (المواد الدراسية)
+app.get('/api/subjects', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM subjects ORDER BY id DESC');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/subjects', async (req, res) => {
+    try {
+        const { title, grade, image, download_url, video_id, category } = req.body;
+        const result = await pool.query(
+            'INSERT INTO subjects (title, grade, image, download_url, video_id, category) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [title, grade, image, download_url, video_id, category]
+        );
+        res.json({ id: result.rows[0].id });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/subjects/:id', async (req, res) => {
+    try {
+        const { title, grade, image, download_url, video_id, category } = req.body;
+        await pool.query(
+            'UPDATE subjects SET title=$1, grade=$2, image=$3, download_url=$4, video_id=$5, category=$6 WHERE id=$7',
+            [title, grade, image, download_url, video_id, category, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/subjects/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM subjects WHERE id=$1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // SMART & FAST DOWNLOAD PROXY
 app.get('/api/download', async (req, res) => {
     let fileUrl = req.query.url;
