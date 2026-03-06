@@ -319,8 +319,16 @@ app.get('/api/download', async (req, res) => {
         }
 
         if (!fileUrl.startsWith('http')) {
-            console.error('❌ Malformed URL received:', fileUrl);
-            return res.status(400).send('عذراً، هذا الرابط غير صالح (Malformed Link). يرجى تجربة كتاب آخر أو تحديث الصفحة.');
+            // Some books have download_url like '#تحميل_الكتاب_PDF'
+            return res.send(`
+            <div style="font-family: sans-serif; text-align: center; padding: 50px; direction: rtl; background: #f9f9f9; min-height: 100vh;">
+                <div style="background: white; padding: 30px; border-radius: 15px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <h2 style="color: #235787;">عذراً، الرابط يتطلب الدخول للمصدر</h2>
+                    <p>هذا الكتاب يجب تحميله مباشرة من موقعه الأصلي. يرجى الرجوع لصفحة الكتاب والضغط على الرابط الأساسي (أو تصفح الكتاب في المصدر).</p>
+                    <button onclick="window.close()" style="display:inline-block; padding: 12px 25px; background: #235787; border: none; cursor: pointer; color: white; border-radius: 8px; font-weight: bold; margin-top: 15px;">إغلاق هذه النافذة</button>
+                </div>
+            </div>
+            `);
         }
 
         const response = await axios({
