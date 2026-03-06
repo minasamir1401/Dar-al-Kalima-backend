@@ -9,7 +9,7 @@ const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-console.log('🚀 Server Version: v4.0 (Neon PostgreSQL Infrastructure)');
+console.log('🚀 Server Version: v4.1 (Cleaned & Secured)');
 
 // Bandwidth compression & Middleware
 app.use(compression());
@@ -23,14 +23,23 @@ const linkCache = new LRUCache({
 });
 
 // Neon PostgreSQL Connection
-const pgURI = 'postgresql://neondb_owner:npg_I9w6ahWPzVuv@ep-rough-violet-ai9mop1v-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require';
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || pgURI,
-    ssl: true
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
 });
 
 pool.on('connect', () => console.log('✅ Connected to Neon PostgreSQL'));
 pool.on('error', (err) => console.error('❌ PG Pool Error:', err));
+
+// Security Middleware: Admin Check
+const checkAdmin = (req, res, next) => {
+    const secret = req.headers['admin-secret'] || req.headers['Admin-Secret'];
+    if (secret === process.env.ADMIN_SECRET) {
+        next();
+    } else {
+        res.status(401).json({ error: 'غير مصرح لك بالقيام بهذا الإجراء' });
+    }
+};
 
 // Helper for clean Arabic Filenames
 function getCleanFileName(fileUrl, contentType) {
@@ -61,10 +70,10 @@ app.get('/api/books', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM books ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل جلب الكتب' }); }
 });
 
-app.post('/api/books', async (req, res) => {
+app.post('/api/books', checkAdmin, async (req, res) => {
     try {
         const { title, url, image, category, download_url } = req.body;
         const result = await pool.query(
@@ -72,10 +81,10 @@ app.post('/api/books', async (req, res) => {
             [title, url, image, category, download_url]
         );
         res.json({ id: result.rows[0].id });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل إضافة الكتاب' }); }
 });
 
-app.put('/api/books/:id', async (req, res) => {
+app.put('/api/books/:id', checkAdmin, async (req, res) => {
     try {
         const { title, url, image, category, download_url } = req.body;
         await pool.query(
@@ -83,14 +92,14 @@ app.put('/api/books/:id', async (req, res) => {
             [title, url, image, category, download_url, req.params.id]
         );
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل تحديث الكتاب' }); }
 });
 
-app.delete('/api/books/:id', async (req, res) => {
+app.delete('/api/books/:id', checkAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM books WHERE id=$1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل حذف الكتاب' }); }
 });
 
 // Courses
@@ -98,7 +107,7 @@ app.get('/api/courses', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM courses ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل جلب الكورسات' }); }
 });
 
 app.get('/api/courses/:id', async (req, res) => {
@@ -111,10 +120,10 @@ app.get('/api/courses/:id', async (req, res) => {
             catch (e) { course.lessons_data = []; }
         }
         res.json(course);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل جلب تفاصيل الكورس' }); }
 });
 
-app.post('/api/courses', async (req, res) => {
+app.post('/api/courses', checkAdmin, async (req, res) => {
     try {
         const { title, url, image, instructor, lessons, category, lessons_data } = req.body;
         const result = await pool.query(
@@ -122,10 +131,10 @@ app.post('/api/courses', async (req, res) => {
             [title, url, image, instructor, lessons, category, lessons_data]
         );
         res.json({ id: result.rows[0].id });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل إضافة الكورس' }); }
 });
 
-app.put('/api/courses/:id', async (req, res) => {
+app.put('/api/courses/:id', checkAdmin, async (req, res) => {
     try {
         const { title, url, image, instructor, lessons, category, lessons_data } = req.body;
         await pool.query(
@@ -133,14 +142,14 @@ app.put('/api/courses/:id', async (req, res) => {
             [title, url, image, instructor, lessons, category, lessons_data, req.params.id]
         );
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل تحديث الكورس' }); }
 });
 
-app.delete('/api/courses/:id', async (req, res) => {
+app.delete('/api/courses/:id', checkAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM courses WHERE id=$1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل حذف الكورس' }); }
 });
 
 // Search
@@ -152,7 +161,7 @@ app.get('/api/search', async (req, res) => {
             [`%${q}%`]
         );
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل البحث' }); }
 });
 
 // Church Videos
@@ -160,10 +169,10 @@ app.get('/api/church-videos', async (req, res) => {
     try {
         const result = await pool.query('SELECT id, title, video_id AS "videoId", collection FROM church_videos ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل جلب فيديوهات الميديا' }); }
 });
 
-app.post('/api/church-videos', async (req, res) => {
+app.post('/api/church-videos', checkAdmin, async (req, res) => {
     try {
         const { title, videoId, collection } = req.body;
         const result = await pool.query(
@@ -171,10 +180,10 @@ app.post('/api/church-videos', async (req, res) => {
             [title, videoId, collection]
         );
         res.json({ id: result.rows[0].id });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل إضافة الفيديو' }); }
 });
 
-app.put('/api/church-videos/:id', async (req, res) => {
+app.put('/api/church-videos/:id', checkAdmin, async (req, res) => {
     try {
         const { title, videoId, collection } = req.body;
         await pool.query(
@@ -182,14 +191,14 @@ app.put('/api/church-videos/:id', async (req, res) => {
             [title, videoId, collection, req.params.id]
         );
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل تحديث الفيديو' }); }
 });
 
-app.delete('/api/church-videos/:id', async (req, res) => {
+app.delete('/api/church-videos/:id', checkAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM church_videos WHERE id=$1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل حذف الفيديو' }); }
 });
 
 // Podcasts
@@ -197,10 +206,10 @@ app.get('/api/podcasts', async (req, res) => {
     try {
         const result = await pool.query('SELECT id, series_title AS "seriesTitle", episode_title AS "episodeTitle", video_id AS "videoId" FROM podcasts ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل جلب حلقات البودكاست' }); }
 });
 
-app.post('/api/podcasts', async (req, res) => {
+app.post('/api/podcasts', checkAdmin, async (req, res) => {
     try {
         const { seriesTitle, episodeTitle, videoId } = req.body;
         const result = await pool.query(
@@ -208,10 +217,10 @@ app.post('/api/podcasts', async (req, res) => {
             [seriesTitle, episodeTitle, videoId]
         );
         res.json({ id: result.rows[0].id });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل إضافة حلقة بودكاست' }); }
 });
 
-app.put('/api/podcasts/:id', async (req, res) => {
+app.put('/api/podcasts/:id', checkAdmin, async (req, res) => {
     try {
         const { seriesTitle, episodeTitle, videoId } = req.body;
         await pool.query(
@@ -219,14 +228,14 @@ app.put('/api/podcasts/:id', async (req, res) => {
             [seriesTitle, episodeTitle, videoId, req.params.id]
         );
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل تحديث الحلقة' }); }
 });
 
-app.delete('/api/podcasts/:id', async (req, res) => {
+app.delete('/api/podcasts/:id', checkAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM podcasts WHERE id=$1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل حذف الحلقة' }); }
 });
 
 // Kids Videos
@@ -234,10 +243,10 @@ app.get('/api/kids-videos', async (req, res) => {
     try {
         const result = await pool.query('SELECT id, section_title AS "sectionTitle", title, video_id AS "videoId", icon, color FROM kids_videos ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل جلب محتوى الأطفال' }); }
 });
 
-app.post('/api/kids-videos', async (req, res) => {
+app.post('/api/kids-videos', checkAdmin, async (req, res) => {
     try {
         const { sectionTitle, title, videoId, icon, color } = req.body;
         const result = await pool.query(
@@ -245,10 +254,10 @@ app.post('/api/kids-videos', async (req, res) => {
             [sectionTitle, title, videoId, icon, color]
         );
         res.json({ id: result.rows[0].id });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل إضافة المحتوى' }); }
 });
 
-app.put('/api/kids-videos/:id', async (req, res) => {
+app.put('/api/kids-videos/:id', checkAdmin, async (req, res) => {
     try {
         const { sectionTitle, title, videoId, icon, color } = req.body;
         await pool.query(
@@ -256,14 +265,14 @@ app.put('/api/kids-videos/:id', async (req, res) => {
             [sectionTitle, title, videoId, icon, color, req.params.id]
         );
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل تحديث المحتوى' }); }
 });
 
-app.delete('/api/kids-videos/:id', async (req, res) => {
+app.delete('/api/kids-videos/:id', checkAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM kids_videos WHERE id=$1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل حذف المحتوى' }); }
 });
 
 // Subjects (المواد الدراسية)
@@ -271,10 +280,10 @@ app.get('/api/subjects', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM subjects ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل جلب المواد الدراسية' }); }
 });
 
-app.post('/api/subjects', async (req, res) => {
+app.post('/api/subjects', checkAdmin, async (req, res) => {
     try {
         const { title, grade, image, download_url, video_id, category } = req.body;
         const result = await pool.query(
@@ -282,10 +291,10 @@ app.post('/api/subjects', async (req, res) => {
             [title, grade, image, download_url, video_id, category]
         );
         res.json({ id: result.rows[0].id });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل إضافة المادة' }); }
 });
 
-app.put('/api/subjects/:id', async (req, res) => {
+app.put('/api/subjects/:id', checkAdmin, async (req, res) => {
     try {
         const { title, grade, image, download_url, video_id, category } = req.body;
         await pool.query(
@@ -293,20 +302,33 @@ app.put('/api/subjects/:id', async (req, res) => {
             [title, grade, image, download_url, video_id, category, req.params.id]
         );
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل تحديث المادة' }); }
 });
 
-app.delete('/api/subjects/:id', async (req, res) => {
+app.delete('/api/subjects/:id', checkAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM subjects WHERE id=$1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: 'فشل حذف المادة' }); }
 });
 
 // SMART & FAST DOWNLOAD PROXY
 app.get('/api/download', async (req, res) => {
     let fileUrl = req.query.url;
     if (!fileUrl) return res.status(400).send('URL is required');
+
+    // Security: Basic SSRF protection
+    try {
+        const parsedUrl = new URL(fileUrl.startsWith('http') ? fileUrl : decodeURIComponent(fileUrl));
+        const allowedDomains = ['mediafire.com', 'archive.org', 'dropbox.com', 'google.com', 'youtube.com', 'ytimg.com', 'm3aarf.com', 'github.com', 'st-takla.org'];
+        const isAllowed = allowedDomains.some(domain => parsedUrl.hostname.includes(domain));
+
+        if (!isAllowed && parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+            return res.status(403).send('غير مسموح بهذا الرابط لأسباب أمنية.');
+        }
+    } catch (e) {
+        return res.status(400).send('رابط غير صالح.');
+    }
 
     if (linkCache.has(fileUrl)) {
         return startStreaming(linkCache.get(fileUrl), res);
@@ -319,12 +341,11 @@ app.get('/api/download', async (req, res) => {
         }
 
         if (!fileUrl.startsWith('http')) {
-            // Some books have download_url like '#تحميل_الكتاب_PDF'
             return res.send(`
             <div style="font-family: sans-serif; text-align: center; padding: 50px; direction: rtl; background: #f9f9f9; min-height: 100vh;">
                 <div style="background: white; padding: 30px; border-radius: 15px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
                     <h2 style="color: #235787;">عذراً، الرابط يتطلب الدخول للمصدر</h2>
-                    <p>هذا الكتاب يجب تحميله مباشرة من موقعه الأصلي. يرجى الرجوع لصفحة الكتاب والضغط على الرابط الأساسي (أو تصفح الكتاب في المصدر).</p>
+                    <p>هذا الكتاب يجب تحميله مباشرة من موقعه الأصلي. يرجى الرجوع لصفحة الكتاب والضغط على الرابط الأساسي.</p>
                     <button onclick="window.close()" style="display:inline-block; padding: 12px 25px; background: #235787; border: none; cursor: pointer; color: white; border-radius: 8px; font-weight: bold; margin-top: 15px;">إغلاق هذه النافذة</button>
                 </div>
             </div>
@@ -394,8 +415,8 @@ app.get('/api/download', async (req, res) => {
     } catch (err) { res.status(500).send('حدث خطأ أثناء معالجة الطلب.'); }
 });
 
-// SCRARE LESSONS from m3aarf
-app.get('/api/courses/:id/scrape', async (req, res) => {
+// SCRAPE LESSONS from m3aarf
+app.get('/api/courses/:id/scrape', checkAdmin, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM courses WHERE id=$1', [req.params.id]);
         if (result.rows.length === 0) return res.status(404).send('Course not found');
@@ -440,7 +461,7 @@ app.get('/api/courses/:id/scrape', async (req, res) => {
 
         await pool.query('UPDATE courses SET lessons_data=$1 WHERE id=$2', [JSON.stringify(lessons), req.params.id]);
         res.json({ success: true, lessonsCount: lessons.length });
-    } catch (scrapeErr) { res.status(500).json({ error: scrapeErr.message }); }
+    } catch (scrapeErr) { res.status(500).json({ error: 'فشل استخراج الدروس' }); }
 });
 
 async function startStreaming(url, res) {
@@ -454,4 +475,4 @@ async function startStreaming(url, res) {
     } catch (e) { res.status(500).send('فشل الاتصال بمزود الملف.'); }
 }
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Manaret El-Eman Cloud Server: http://localhost:${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Manaret El-Eman Cloud Server: http://0.0.0.0:${PORT}`));
