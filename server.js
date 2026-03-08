@@ -23,8 +23,9 @@ const linkCache = new LRUCache({
 });
 
 // Neon PostgreSQL Connection
+const pgURI = 'postgresql://neondb_owner:npg_I9w6ahWPzVuv@ep-rough-violet-ai9mop1v-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require';
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: process.env.DATABASE_URL || pgURI,
     ssl: { rejectUnauthorized: false }
 });
 
@@ -310,6 +311,29 @@ app.delete('/api/subjects/:id', checkAdmin, async (req, res) => {
         await pool.query('DELETE FROM subjects WHERE id=$1', [req.params.id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: 'فشل حذف المادة' }); }
+});
+
+// Site Settings
+app.get('/api/settings/:key', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT setting_value FROM site_settings WHERE setting_key=$1', [req.params.key]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Setting not found' });
+        res.json(result.rows[0].setting_value);
+    } catch (err) { res.status(500).json({ error: 'فشل جلب الإعدادات' }); }
+});
+
+app.put('/api/settings/:key', checkAdmin, async (req, res) => {
+    try {
+        const { setting_value } = req.body;
+        await pool.query(
+            `INSERT INTO site_settings (setting_key, setting_value) 
+             VALUES ($1, $2) 
+             ON CONFLICT (setting_key) 
+             DO UPDATE SET setting_value = EXCLUDED.setting_value`,
+            [req.params.key, JSON.stringify(setting_value)]
+        );
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: 'فشل تحديث الإعدادات' }); }
 });
 
 // SMART & FAST DOWNLOAD PROXY
