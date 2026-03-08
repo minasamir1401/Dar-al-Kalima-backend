@@ -6,6 +6,14 @@ const cheerio = require('cheerio');
 const compression = require('compression');
 const { LRUCache } = require('lru-cache');
 const { Pool } = require('pg');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// Gemini AI Setup
+const genAI = new GoogleGenerativeAI('AIzaSyAGl-TgOFQ_XyMllIrjrxfXUhTeEzx9k8c');
+const aiModel = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -29,7 +37,15 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-pool.on('connect', () => console.log('✅ Connected to Neon PostgreSQL'));
+// Separate Pool for Chat Database
+const chatPgURI = 'postgresql://neondb_owner:npg_BEYFkPRgV5h8@ep-cold-bird-adjc4zdj-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const chatPool = new Pool({
+    connectionString: chatPgURI,
+    ssl: { rejectUnauthorized: false }
+});
+
+pool.on('connect', () => console.log('✅ Connected to Main Neon PostgreSQL'));
+chatPool.on('connect', () => console.log('✅ Connected to Chat Neon PostgreSQL'));
 pool.on('error', (err) => console.error('❌ PG Pool Error:', err));
 
 // Security Middleware: Admin Check
@@ -41,6 +57,29 @@ const checkAdmin = (req, res, next) => {
         res.status(401).json({ error: 'غير مصرح لك بالقيام بهذا الإجراء' });
     }
 };
+
+// Multer Storage Configuration
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = 'uploads/';
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir);
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+// Serve static files from uploads folder
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Helper for clean Arabic Filenames
 function getCleanFileName(fileUrl, contentType) {
@@ -334,6 +373,200 @@ app.put('/api/settings/:key', checkAdmin, async (req, res) => {
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: 'فشل تحديث الإعدادات' }); }
+});
+
+// --- Chat System Endpoints ---
+
+// Register / Login user
+app.post('/api/chat/register', async (req, res) => {
+    const { name, phone, gender } = req.body;
+    if (!name || !phone) return res.status(400).json({ error: 'الاسم والرقم مطلوبان' });
+    try {
+        const result = await chatPool.query(
+            `INSERT INTO chat_users (name, phone, gender) 
+             VALUES ($1, $2, $3) 
+             ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, gender = EXCLUDED.gender 
+             RETURNING *`,
+            [name, phone, gender]
+        );
+        res.json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: 'فشل تسجيل المستخدم' }); }
+});
+
+// Find user by phone (Exact match)
+app.get('/api/chat/users/:phone', async (req, res) => {
+    try {
+        const result = await chatPool.query('SELECT name, phone, gender FROM chat_users WHERE phone = $1', [req.params.phone.trim()]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'المستخدم غير موجود' });
+        res.json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: 'فشل جلب بيانات المستخدم' }); }
+});
+
+// Search users by name or phone (Partial match)
+app.get('/api/chat/search/:query', async (req, res) => {
+    const { query } = req.params;
+    try {
+        const result = await chatPool.query(
+            "SELECT name, phone, gender FROM chat_users WHERE phone LIKE $1 OR name ILIKE $1 LIMIT 10",
+            [`%${query}%`]
+        );
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: 'فشل البحث عن المستخدم' }); }
+});
+
+// Send message
+app.post('/api/chat/messages', async (req, res) => {
+    let { senderPhone, receiverPhone, message, imageUrl } = req.body;
+    senderPhone = senderPhone?.trim();
+    receiverPhone = receiverPhone?.trim();
+    if (!senderPhone || !receiverPhone || (!message && !imageUrl)) return res.status(400).json({ error: 'بيانات ناقصة' });
+    try {
+        console.log(`✉️ Message from ${senderPhone} to ${receiverPhone}`);
+        const result = await chatPool.query(
+            'INSERT INTO chat_messages (sender_phone, receiver_phone, message, image_url) VALUES ($1, $2, $3, $4) RETURNING *',
+            [senderPhone, receiverPhone, message || '', imageUrl || null]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('❌ Send Error:', err);
+        res.status(500).json({ error: 'فشل إرسال الرسالة' });
+    }
+});
+
+// Delete entire conversation
+app.delete('/api/chat/conversations/:p1/:p2', async (req, res) => {
+    const { p1, p2 } = req.params;
+    try {
+        await chatPool.query(
+            'DELETE FROM chat_messages WHERE (sender_phone = $1 AND receiver_phone = $2) OR (sender_phone = $2 AND receiver_phone = $1)',
+            [p1, p2]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('❌ Delete Conv Error:', err);
+        res.status(500).json({ error: 'فشل حذف المحادثة' });
+    }
+});
+
+// AI Chat Endpoint with Memory
+app.post('/api/chat/ai', async (req, res) => {
+    let { senderPhone, message } = req.body;
+    senderPhone = senderPhone?.trim();
+    if (!senderPhone || !message) return res.status(400).json({ error: 'بيانات ناقصة' });
+
+    try {
+        console.log(`🤖 AI Request from ${senderPhone}`);
+
+        // 1. Fetch last 10 messages for context
+        const historyRes = await chatPool.query(
+            `SELECT sender_phone, message FROM chat_messages 
+             WHERE (sender_phone = $1 AND receiver_phone = '999') 
+                OR (sender_phone = '999' AND receiver_phone = $1) 
+             ORDER BY created_at DESC LIMIT 10`,
+            [senderPhone]
+        );
+
+        const history = historyRes.rows.reverse().map(row => ({
+            role: row.sender_phone === '999' ? "model" : "user",
+            parts: [{ text: row.message }]
+        }));
+
+        const chat = aiModel.startChat({
+            history: [
+                { role: "user", parts: [{ text: "أنت مساعد ذكي في برنامج 'دار الكلمة'. أنت خادم مسيحي أرثوذكسي، متمسك بالعقيدة الأرثوذكسية الصحيحة والتقاليد الكنسية والآراء اللاهوتية السليمة. رد باختصار وباللغة العربية العامية المصرية، وتأكد أن كل إجاباتك تتفق تماماً مع التراث الأرثوذكسي القبطي. يجب أن تنهي كل رد لك بجملة: 'تم تدريبي وبرمجتي بواسطة مينا سمير'." }] },
+                { role: "model", parts: [{ text: "أهلاً بك! أنا خادمك المساعد من دار الكلمة، وتحت أمرك في أي سؤال يخص إيماننا الأرثوذكسي القبطي الجميل. كيف أقدر أساعدك النهاردة؟ تم تدريبي وبرمجتي بواسطة مينا سمير." }] },
+                ...history
+            ]
+        });
+
+        const result = await chat.sendMessage(message);
+        let aiResponse = result.response.text().trim();
+
+        // Ensure signature is present for branding
+        const signature = "تم تدريبي وبرمجتي بواسطة مينا سمير.";
+        if (!aiResponse.includes("مينا سمير")) {
+            aiResponse += "\n\n" + signature;
+        }
+
+        // 2. Save User Message
+        await chatPool.query(
+            'INSERT INTO chat_messages (sender_phone, receiver_phone, message) VALUES ($1, $2, $3)',
+            [senderPhone, '999', message]
+        );
+
+        // 3. Save AI Message
+        const dbResult = await chatPool.query(
+            'INSERT INTO chat_messages (sender_phone, receiver_phone, message) VALUES ($1, $2, $3) RETURNING *',
+            ['999', senderPhone, aiResponse]
+        );
+
+        res.json(dbResult.rows[0]);
+    } catch (err) {
+        console.error('❌ AI Error:', err);
+        res.status(500).json({ error: 'الذكاء الاصطناعي مشغول حالياً، حاول مرة أخرى.' });
+    }
+});
+
+// Upload image for chat
+app.post('/api/chat/upload', upload.single('image'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'لم يتم اختيار صورة' });
+    const imageUrl = `/uploads/${req.file.filename}`;
+    res.json({ imageUrl });
+});
+
+// Get messages between two users
+app.get('/api/chat/messages/:myPhone/:theirPhone', async (req, res) => {
+    try {
+        const result = await chatPool.query(
+            `SELECT * FROM chat_messages 
+             WHERE (sender_phone = $1 AND receiver_phone = $2) 
+                OR (sender_phone = $2 AND receiver_phone = $1) 
+             ORDER BY created_at ASC`,
+            [req.params.myPhone, req.params.theirPhone]
+        );
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: 'فشل جلب الرسائل' }); }
+});
+
+// Get recent chats (users I talked to)
+app.get('/api/chat/conversations/:phone', async (req, res) => {
+    try {
+        const result = await chatPool.query(
+            `SELECT DISTINCT u.name, u.phone, u.gender
+             FROM chat_users u
+             JOIN chat_messages m ON (m.sender_phone = u.phone OR m.receiver_phone = u.phone)
+             WHERE (m.sender_phone = $1 OR m.receiver_phone = $1) AND u.phone != $1`,
+            [req.params.phone]
+        );
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: 'فشل جلب المحادثات' }); }
+});
+
+// Delete message
+app.delete('/api/chat/messages/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log(`🗑️ Attempting to delete message ID: ${id}`);
+        // Check for image
+        const msgResult = await chatPool.query('SELECT image_url FROM chat_messages WHERE id = $1', [id]);
+        if (msgResult.rows.length > 0 && msgResult.rows[0].image_url) {
+            const relPath = msgResult.rows[0].image_url.startsWith('/') ? msgResult.rows[0].image_url.substring(1) : msgResult.rows[0].image_url;
+            const filePath = path.join(__dirname, relPath);
+            console.log(`🖼️ Deleting file at: ${filePath}`);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log('✅ File deleted from disk');
+            } else {
+                console.warn('⚠️ File not found on disk, skipping file delete');
+            }
+        }
+        await chatPool.query('DELETE FROM chat_messages WHERE id = $1', [id]);
+        console.log(`✅ Message ${id} deleted from DB`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('❌ Delete Error:', err);
+        res.status(500).json({ error: 'فشل حذف الرسالة' });
+    }
 });
 
 // SMART & FAST DOWNLOAD PROXY

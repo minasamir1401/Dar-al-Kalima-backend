@@ -9,6 +9,7 @@
     "import": "node import_to_db.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.6",
     "cheerio": "^1.2.0",
     "compression": "^1.8.1",
@@ -18,6 +19,7 @@
     "iconv-lite": "^0.7.2",
     "lru-cache": "^11.2.6",
     "mongoose": "^9.2.3",
+    "multer": "^2.1.1",
     "pg": "^8.19.0",
     "sqlite3": "^5.1.7"
   },
