@@ -12,7 +12,8 @@ const fs = require('fs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Gemini AI Setup
-const genAI = new GoogleGenerativeAI('AIzaSyAGl-TgOFQ_XyMllIrjrxfXUhTeEzx9k8c');
+const GEMINI_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAGl-TgOFQ_XyMllIrjrxfXUhTeEzx9k8c';
+const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 const aiModel = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
 const app = express();
