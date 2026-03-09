@@ -72,6 +72,7 @@ app.use(compression());
 const allowedOrigins = [
     'https://daralkalam.com',        // Production site
     'https://daralkalam.vercel.app', // Vercel preview
+    'https://dar-al-kalima.vercel.app', // The specific one failing
     'http://localhost:5173',        // Local dev
     'http://localhost:3000'         // Local dev alternative
 ];
