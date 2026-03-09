@@ -11,13 +11,26 @@ const path = require('path');
 const fs = require('fs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Gemini AI Setup
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-if (!GEMINI_KEY || GEMINI_KEY === 'ضع_مفتاح_جوجل_هنا') {
-    console.warn('⚠️ تذكير: يجب إضافة مفتاح GEMINI_API_KEY الخاص بك في ملف .env');
+// Gemini AI Setup - Key Rotation Support
+const GEMINI_KEYS = [
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+    process.env.GEMINI_API_KEY_4,
+].filter(k => k && k.length > 10);
+
+if (GEMINI_KEYS.length === 0) {
+    console.warn('⚠️ لم يتم العثور على أي مفتاح Gemini في البيئة!');
+} else {
+    console.log(`✅ تم تحميل ${GEMINI_KEYS.length} مفتاح Gemini`);
 }
-const genAI = new GoogleGenerativeAI(GEMINI_KEY || 'INVALID_KEY');
-const aiModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+let currentKeyIndex = 0;
+const getAiModel = () => {
+    const key = GEMINI_KEYS[currentKeyIndex % GEMINI_KEYS.length];
+    const client = new GoogleGenerativeAI(key);
+    return client.getGenerativeModel({ model: "gemini-2.0-flash" });
+};
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -476,7 +489,7 @@ app.post('/api/chat/ai', async (req, res) => {
             parts: [{ text: row.message }]
         }));
 
-        const chat = aiModel.startChat({
+        const chat = getAiModel().startChat({
             history: [
                 { role: "user", parts: [{ text: "أنت مساعد ذكي في برنامج 'دار الكلمة'. أنت خادم مسيحي أرثوذكسي، متمسك بالعقيدة الأرثوذكسية الصحيحة والتقاليد الكنسية والآراء اللاهوتية السليمة. رد باختصار وباللغة العربية العامية المصرية، وتأكد أن كل إجاباتك تتفق تماماً مع التراث الأرثوذكسي القبطي. يجب أن تنهي كل رد لك بجملة: 'تم تدريبي وبرمجتي بواسطة مينا سمير'." }] },
                 { role: "model", parts: [{ text: "أهلاً بك! أنا خادمك المساعد من دار الكلمة، وتحت أمرك في أي سؤال يخص إيماننا الأرثوذكسي القبطي الجميل. كيف أقدر أساعدك النهاردة؟ تم تدريبي وبرمجتي بواسطة مينا سمير." }] },
@@ -484,19 +497,19 @@ app.post('/api/chat/ai', async (req, res) => {
             ]
         });
 
-        // Retry logic for rate limits (up to 3 attempts)
+        // Retry logic with key rotation for rate limits
         let aiResponse = null;
-        let lastErr = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        const maxAttempts = GEMINI_KEYS.length * 2;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 const result = await chat.sendMessage(message);
                 aiResponse = result.response.text().trim();
                 break;
             } catch (e) {
-                lastErr = e;
-                if (e.status === 429 && attempt < 3) {
-                    console.log(`⏳ Rate limited, retrying in 3s... (attempt ${attempt})`);
-                    await new Promise(r => setTimeout(r, 3000));
+                if (e.status === 429 && attempt < maxAttempts) {
+                    currentKeyIndex++;
+                    console.log(`⏳ Rate limited, switching to key ${currentKeyIndex % GEMINI_KEYS.length + 1}...`);
+                    await new Promise(r => setTimeout(r, 1000));
                 } else {
                     throw e;
                 }
