@@ -21,7 +21,7 @@ const aiModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-console.log('🚀 Server Version: v4.1 (Cleaned & Secured)');
+console.log('🚀 Server Version: v4.2 (AI Support Updated)');
 
 // Bandwidth compression & Middleware
 app.use(compression());
