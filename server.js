@@ -17,7 +17,7 @@ if (!GEMINI_KEY || GEMINI_KEY === 'ضع_مفتاح_جوجل_هنا') {
     console.warn('⚠️ تذكير: يجب إضافة مفتاح GEMINI_API_KEY الخاص بك في ملف .env');
 }
 const genAI = new GoogleGenerativeAI(GEMINI_KEY || 'INVALID_KEY');
-const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const aiModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
