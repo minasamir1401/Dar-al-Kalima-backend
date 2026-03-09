@@ -35,7 +35,18 @@ const getAiModel = () => {
 };
 
 // Groq Setup
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+let groq = null;
+if (process.env.GROQ_API_KEY) {
+    try {
+        groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+        console.log("✅ Groq AI Fallback Initialized");
+    } catch (e) {
+        console.error("❌ Failed to init Groq:", e.message);
+    }
+} else {
+    console.warn("⚠️ Groq API Key is missing. Fallback is disabled.");
+}
+
 const AI_SYSTEM_PROMPT = "أنت مساعد ذكي في برنامج 'دار الكلمة'. أنت خادم مسيحي أرثوذكسي، متمسك بالعقيدة الأرثوذكسية الصحيحة والتقاليد الكنسية والآراء اللاهوتية السليمة. رد باختصار وباللغة العربية العامية المصرية، وتأكد أن كل إجاباتك تتفق تماماً مع التراث الأرثوذكسي القبطي. استشهد بآيات من الكتاب المقدس عند الحاجة. يجب أن تنهي كل رد لك بجملة: 'تم تدريبي وبرمجتي بواسطة مينا سمير'.";
 
 
@@ -520,28 +531,33 @@ app.post('/api/chat/ai', async (req, res) => {
                     console.log(`⏳ Gemini Key ...${key.slice(-4)} rate limited. Rotating...`);
                     await new Promise(r => setTimeout(r, 1000));
                 } else {
-                    console.log("⚠️ All Gemini attempts failed, switching to Groq...");
-                    try {
-                        const groqHistory = history.map(h => ({
-                            role: h.role === "model" ? "assistant" : "user",
-                            content: h.parts[0].text
-                        }));
-                        const chatCompletion = await groq.chat.completions.create({
-                            messages: [
-                                { role: "system", content: AI_SYSTEM_PROMPT },
-                                ...groqHistory,
-                                { role: "user", content: message }
-                            ],
-                            model: "llama-3.3-70b-versatile",
-                            max_tokens: 500
-                        });
-                        aiResponse = chatCompletion.choices[0].message.content.trim();
-                        usedGroq = true;
-                        console.log("✅ Groq Fallback successful!");
-                        break;
-                    } catch (groqErr) {
-                        console.error("❌ Groq Fallback failed:", groqErr);
-                        throw e; // throw original Gemini error if Groq also fails
+                    console.log("⚠️ All Gemini attempts failed, checking for Groq fallback...");
+                    if (groq) {
+                        try {
+                            const groqHistory = history.map(h => ({
+                                role: h.role === "model" ? "assistant" : "user",
+                                content: h.parts[0].text
+                            }));
+                            const chatCompletion = await groq.chat.completions.create({
+                                messages: [
+                                    { role: "system", content: AI_SYSTEM_PROMPT },
+                                    ...groqHistory,
+                                    { role: "user", content: message }
+                                ],
+                                model: "llama-3.3-70b-versatile",
+                                max_tokens: 500
+                            });
+                            aiResponse = chatCompletion.choices[0].message.content.trim();
+                            usedGroq = true;
+                            console.log("✅ Groq Fallback successful!");
+                            break;
+                        } catch (groqErr) {
+                            console.error("❌ Groq Fallback failed:", groqErr);
+                            throw e; // throw original Gemini error
+                        }
+                    } else {
+                        console.warn("🛑 Groq not initialized, no fallback available.");
+                        throw e;
                     }
                 }
             }
