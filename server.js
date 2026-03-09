@@ -29,7 +29,7 @@ let currentKeyIndex = 0;
 const getAiModel = () => {
     const key = GEMINI_KEYS[currentKeyIndex % GEMINI_KEYS.length];
     const client = new GoogleGenerativeAI(key);
-    return client.getGenerativeModel({ model: "gemini-2.0-flash" });
+    return { model: client.getGenerativeModel({ model: "gemini-2.0-flash" }), key };
 };
 
 const app = express();
@@ -499,8 +499,9 @@ app.post('/api/chat/ai', async (req, res) => {
         ];
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const { model, key } = getAiModel();
             try {
-                const model = getAiModel();
+                console.log(`📡 Attempt ${attempt} using key ending in ...${key.slice(-4)}`);
                 const session = model.startChat({ history: fullHistory });
                 const result = await session.sendMessage(message);
                 aiResponse = result.response.text().trim();
@@ -508,7 +509,7 @@ app.post('/api/chat/ai', async (req, res) => {
             } catch (e) {
                 if (e.status === 429 && attempt < maxAttempts) {
                     currentKeyIndex++;
-                    console.log(`⏳ Rate limited, switching to key ${currentKeyIndex % GEMINI_KEYS.length + 1}...`);
+                    console.log(`⏳ Key ...${key.slice(-4)} rate limited. Rotating...`);
                     await new Promise(r => setTimeout(r, 1000));
                 } else {
                     throw e;
