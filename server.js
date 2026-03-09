@@ -484,8 +484,24 @@ app.post('/api/chat/ai', async (req, res) => {
             ]
         });
 
-        const result = await chat.sendMessage(message);
-        let aiResponse = result.response.text().trim();
+        // Retry logic for rate limits (up to 3 attempts)
+        let aiResponse = null;
+        let lastErr = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const result = await chat.sendMessage(message);
+                aiResponse = result.response.text().trim();
+                break;
+            } catch (e) {
+                lastErr = e;
+                if (e.status === 429 && attempt < 3) {
+                    console.log(`⏳ Rate limited, retrying in 3s... (attempt ${attempt})`);
+                    await new Promise(r => setTimeout(r, 3000));
+                } else {
+                    throw e;
+                }
+            }
+        }
 
         // Ensure signature is present for branding
         const signature = "تم تدريبي وبرمجتي بواسطة مينا سمير.";
@@ -508,9 +524,22 @@ app.post('/api/chat/ai', async (req, res) => {
         res.json(dbResult.rows[0]);
     } catch (err) {
         console.error('❌ AI Error:', err);
-        res.status(500).json({ error: 'الذكاء الاصطناعي مشغول حالياً، حاول مرة أخرى.', details: err.message });
+        // Friendly message for quota exceeded
+        if (err.status === 429) {
+            const fallbackMsg = "عذراً، الذكاء الاصطناعي وصل للحد الأقصى من الطلبات المجانية حالياً. حاول مرة أخرى بعد دقيقة. تم تدريبي وبرمجتي بواسطة مينا سمير.";
+            // Save friendly message to DB so user sees something
+            try {
+                const dbResult = await chatPool.query(
+                    'INSERT INTO chat_messages (sender_phone, receiver_phone, message) VALUES ($1, $2, $3) RETURNING *',
+                    ['999', senderPhone, fallbackMsg]
+                );
+                return res.json(dbResult.rows[0]);
+            } catch { }
+        }
+        res.status(500).json({ error: 'الذكاء الاصطناعي مشغول حالياً، حاول مرة أخرى.' });
     }
 });
+
 
 // Upload image for chat
 app.post('/api/chat/upload', upload.single('image'), (req, res) => {
