@@ -489,20 +489,20 @@ app.post('/api/chat/ai', async (req, res) => {
             parts: [{ text: row.message }]
         }));
 
-        const chat = getAiModel().startChat({
-            history: [
-                { role: "user", parts: [{ text: "أنت مساعد ذكي في برنامج 'دار الكلمة'. أنت خادم مسيحي أرثوذكسي، متمسك بالعقيدة الأرثوذكسية الصحيحة والتقاليد الكنسية والآراء اللاهوتية السليمة. رد باختصار وباللغة العربية العامية المصرية، وتأكد أن كل إجاباتك تتفق تماماً مع التراث الأرثوذكسي القبطي. يجب أن تنهي كل رد لك بجملة: 'تم تدريبي وبرمجتي بواسطة مينا سمير'." }] },
-                { role: "model", parts: [{ text: "أهلاً بك! أنا خادمك المساعد من دار الكلمة، وتحت أمرك في أي سؤال يخص إيماننا الأرثوذكسي القبطي الجميل. كيف أقدر أساعدك النهاردة؟ تم تدريبي وبرمجتي بواسطة مينا سمير." }] },
-                ...history
-            ]
-        });
-
         // Retry logic with key rotation for rate limits
         let aiResponse = null;
         const maxAttempts = GEMINI_KEYS.length * 2;
+        const fullHistory = [
+            { role: "user", parts: [{ text: "أنت مساعد ذكي في برنامج 'دار الكلمة'. أنت خادم مسيحي أرثوذكسي، متمسك بالعقيدة الأرثوذكسية الصحيحة والتقاليد الكنسية والآراء اللاهوتية السليمة. رد باختصار وباللغة العربية العامية المصرية، وتأكد أن كل إجاباتك تتفق تماماً مع التراث الأرثوذكسي القبطي. يجب أن تنهي كل رد لك بجملة: 'تم تدريبي وبرمجتي بواسطة مينا سمير'." }] },
+            { role: "model", parts: [{ text: "أهلاً بك! أنا خادمك المساعد من دار الكلمة، وتحت أمرك في أي سؤال يخص إيماننا الأرثوذكسي القبطي الجميل. كيف أقدر أساعدك النهاردة؟ تم تدريبي وبرمجتي بواسطة مينا سمير." }] },
+            ...history
+        ];
+
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                const result = await chat.sendMessage(message);
+                const model = getAiModel();
+                const session = model.startChat({ history: fullHistory });
+                const result = await session.sendMessage(message);
                 aiResponse = result.response.text().trim();
                 break;
             } catch (e) {
