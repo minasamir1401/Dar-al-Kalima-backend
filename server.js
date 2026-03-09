@@ -12,9 +12,12 @@ const fs = require('fs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Gemini AI Setup
-const GEMINI_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAGl-TgOFQ_XyMllIrjrxfXUhTeEzx9k8c';
-const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-const aiModel = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_KEY || GEMINI_KEY === 'ضع_مفتاح_جوجل_هنا') {
+    console.warn('⚠️ تذكير: يجب إضافة مفتاح GEMINI_API_KEY الخاص بك في ملف .env');
+}
+const genAI = new GoogleGenerativeAI(GEMINI_KEY || 'INVALID_KEY');
+const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
