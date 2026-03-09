@@ -68,7 +68,26 @@ console.log('🚀 Server Version: v4.2 (AI Support Updated)');
 
 // Bandwidth compression & Middleware
 app.use(compression());
-app.use(cors());
+// Restrict CORS for Security
+const allowedOrigins = [
+    'https://daralkalam.com',        // Production site
+    'https://daralkalam.vercel.app', // Vercel preview
+    'http://localhost:5173',        // Local dev
+    'http://localhost:3000'         // Local dev alternative
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    }
+}));
+
 app.use(express.json());
 
 // Optimization: Cache for resolved download links (1 hour expiry)
@@ -78,18 +97,17 @@ const linkCache = new LRUCache({
 });
 
 // Neon PostgreSQL Connection
-const pgURI = 'postgresql://neondb_owner:npg_I9w6ahWPzVuv@ep-rough-violet-ai9mop1v-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require';
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || pgURI,
+    connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
 // Separate Pool for Chat Database
-const chatPgURI = 'postgresql://neondb_owner:npg_BEYFkPRgV5h8@ep-cold-bird-adjc4zdj-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
 const chatPool = new Pool({
-    connectionString: chatPgURI,
+    connectionString: process.env.CHAT_DATABASE_URL || process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
+
 
 pool.on('connect', () => console.log('✅ Connected to Main Neon PostgreSQL'));
 chatPool.on('connect', () => console.log('✅ Connected to Chat Neon PostgreSQL'));
