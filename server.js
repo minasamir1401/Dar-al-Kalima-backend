@@ -508,7 +508,7 @@ app.post('/api/chat/ai', async (req, res) => {
         res.json(dbResult.rows[0]);
     } catch (err) {
         console.error('❌ AI Error:', err);
-        res.status(500).json({ error: 'الذكاء الاصطناعي مشغول حالياً، حاول مرة أخرى.' });
+        res.status(500).json({ error: 'الذكاء الاصطناعي مشغول حالياً، حاول مرة أخرى.', details: err.message });
     }
 });
 
