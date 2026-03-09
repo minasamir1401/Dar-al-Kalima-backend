@@ -480,7 +480,7 @@ app.post('/api/chat/ai', async (req, res) => {
             `SELECT sender_phone, message FROM chat_messages 
              WHERE (sender_phone = $1 AND receiver_phone = '999') 
                 OR (sender_phone = '999' AND receiver_phone = $1) 
-             ORDER BY created_at DESC LIMIT 10`,
+             ORDER BY created_at DESC LIMIT 5`,
             [senderPhone]
         );
 
@@ -538,19 +538,28 @@ app.post('/api/chat/ai', async (req, res) => {
         res.json(dbResult.rows[0]);
     } catch (err) {
         console.error('❌ AI Error:', err);
-        // Friendly message for quota exceeded
-        if (err.status === 429) {
-            const fallbackMsg = "عذراً، الذكاء الاصطناعي وصل للحد الأقصى من الطلبات المجانية حالياً. حاول مرة أخرى بعد دقيقة. تم تدريبي وبرمجتي بواسطة مينا سمير.";
-            // Save friendly message to DB so user sees something
-            try {
-                const dbResult = await chatPool.query(
-                    'INSERT INTO chat_messages (sender_phone, receiver_phone, message) VALUES ($1, $2, $3) RETURNING *',
-                    ['999', senderPhone, fallbackMsg]
-                );
-                return res.json(dbResult.rows[0]);
-            } catch { }
+
+        // Final fallback: Give a friendly AI-style answer even if everything fails
+        const fallbackMsg = "بصراحة، الطلبات كتير جداً دلوقتى وأنا محتاج آخد نفس بسيط لمدة دقائق. ارجع لى تانى وهتلاقيني تحت أمرك! تم تدريبي وبرمجتي بواسطة مينا سمير.";
+
+        try {
+            // Save User's message so it's not lost
+            await chatPool.query(
+                'INSERT INTO chat_messages (sender_phone, receiver_phone, message) VALUES ($1, $2, $3)',
+                [senderPhone, '999', message]
+            );
+
+            // Save Fallback AI message
+            const dbResult = await chatPool.query(
+                'INSERT INTO chat_messages (sender_phone, receiver_phone, message) VALUES ($1, $2, $3) RETURNING *',
+                ['999', senderPhone, fallbackMsg]
+            );
+
+            return res.json(dbResult.rows[0]);
+        } catch (dbErr) {
+            console.error('❌ DB Save Error during fallback:', dbErr);
+            res.status(500).json({ error: 'الذكاء الاصطناعي مشغول حالياً، حاول مرة أخرى.' });
         }
-        res.status(500).json({ error: 'الذكاء الاصطناعي مشغول حالياً، حاول مرة أخرى.' });
     }
 });
 
