@@ -10,6 +10,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
+
 
 // Gemini AI Setup - Key Rotation Support
 const GEMINI_KEYS = [
@@ -31,6 +33,11 @@ const getAiModel = () => {
     const client = new GoogleGenerativeAI(key);
     return { model: client.getGenerativeModel({ model: "gemini-2.0-flash" }), key };
 };
+
+// Groq Setup
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const AI_SYSTEM_PROMPT = "أنت مساعد ذكي في برنامج 'دار الكلمة'. أنت خادم مسيحي أرثوذكسي، متمسك بالعقيدة الأرثوذكسية الصحيحة والتقاليد الكنسية والآراء اللاهوتية السليمة. رد باختصار وباللغة العربية العامية المصرية، وتأكد أن كل إجاباتك تتفق تماماً مع التراث الأرثوذكسي القبطي. استشهد بآيات من الكتاب المقدس عند الحاجة. يجب أن تنهي كل رد لك بجملة: 'تم تدريبي وبرمجتي بواسطة مينا سمير'.";
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -489,33 +496,57 @@ app.post('/api/chat/ai', async (req, res) => {
             parts: [{ text: row.message }]
         }));
 
-        // Retry logic with key rotation for rate limits
+        // Retry logic with key rotation for Gemini
         let aiResponse = null;
+        let usedGroq = false;
         const maxAttempts = GEMINI_KEYS.length * 2;
-        const fullHistory = [
-            { role: "user", parts: [{ text: "أنت مساعد ذكي في برنامج 'دار الكلمة'. أنت خادم مسيحي أرثوذكسي، متمسك بالعقيدة الأرثوذكسية الصحيحة والتقاليد الكنسية والآراء اللاهوتية السليمة. رد باختصار وباللغة العربية العامية المصرية، وتأكد أن كل إجاباتك تتفق تماماً مع التراث الأرثوذكسي القبطي. يجب أن تنهي كل رد لك بجملة: 'تم تدريبي وبرمجتي بواسطة مينا سمير'." }] },
+        const fullHistoryGemini = [
+            { role: "user", parts: [{ text: AI_SYSTEM_PROMPT }] },
             { role: "model", parts: [{ text: "أهلاً بك! أنا خادمك المساعد من دار الكلمة، وتحت أمرك في أي سؤال يخص إيماننا الأرثوذكسي القبطي الجميل. كيف أقدر أساعدك النهاردة؟ تم تدريبي وبرمجتي بواسطة مينا سمير." }] },
-            ...history
+            ...history.map(h => ({ role: h.role, parts: [{ text: h.parts[0].text }] }))
         ];
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             const { model, key } = getAiModel();
             try {
-                console.log(`📡 Attempt ${attempt} using key ending in ...${key.slice(-4)}`);
-                const session = model.startChat({ history: fullHistory });
+                console.log(`📡 Attempt ${attempt} using Gemini key ending in ...${key.slice(-4)}`);
+                const session = model.startChat({ history: fullHistoryGemini });
                 const result = await session.sendMessage(message);
                 aiResponse = result.response.text().trim();
                 break;
             } catch (e) {
                 if (e.status === 429 && attempt < maxAttempts) {
                     currentKeyIndex++;
-                    console.log(`⏳ Key ...${key.slice(-4)} rate limited. Rotating...`);
+                    console.log(`⏳ Gemini Key ...${key.slice(-4)} rate limited. Rotating...`);
                     await new Promise(r => setTimeout(r, 1000));
                 } else {
-                    throw e;
+                    console.log("⚠️ All Gemini attempts failed, switching to Groq...");
+                    try {
+                        const groqHistory = history.map(h => ({
+                            role: h.role === "model" ? "assistant" : "user",
+                            content: h.parts[0].text
+                        }));
+                        const chatCompletion = await groq.chat.completions.create({
+                            messages: [
+                                { role: "system", content: AI_SYSTEM_PROMPT },
+                                ...groqHistory,
+                                { role: "user", content: message }
+                            ],
+                            model: "llama-3.3-70b-versatile",
+                            max_tokens: 500
+                        });
+                        aiResponse = chatCompletion.choices[0].message.content.trim();
+                        usedGroq = true;
+                        console.log("✅ Groq Fallback successful!");
+                        break;
+                    } catch (groqErr) {
+                        console.error("❌ Groq Fallback failed:", groqErr);
+                        throw e; // throw original Gemini error if Groq also fails
+                    }
                 }
             }
         }
+
 
         // Ensure signature is present for branding
         const signature = "تم تدريبي وبرمجتي بواسطة مينا سمير.";
