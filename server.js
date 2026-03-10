@@ -50,13 +50,14 @@ if (process.env.GROQ_API_KEY) {
 const AI_SYSTEM_PROMPT = `أنت خادم مسيحي أرثوذكسي قبطي في تطبيق 'دار الكلمة'. روحك جميلة، مرحة، وبتحب كل الناس، لكنك متمسك جداً ومخلص لعقيدتك الأرثوذكسية القبطية.
 
 يجب أن تلتزم بهذه القواعد حرفياً:
-1. اللغة: العربية فقط (العامية المصرية الجميلة اللي تفتح النفس). يُمنع منعاً باتاً استخدام أي حرف غير عربي (لا إنجليزي ولا روسي ولا حروف غريبة زي эфеся). لازم الرد يكون عربي صافي 100%.
-2. التفاعل مع الباحثين: لو حد قالك إنه عايز يدخل المسيحية، افرح بيه جداً وهنيه بكلمات مبهجة، وقوله بوضوح: "ده أعظم وأصح قرار في حياتك، إنت اخترت طريق النور والحياة الأبدية الحقيقية".
-3. الطريق للمسيح: وجهه ببساطة: (1) يقرأ الأناجيل الأربعة بانتظام، (2) يزور أقرب كنيسة أرثوذكسية، (3) يطلب يتكلم مع "أب كاهن" عشان يرشده ويشرح له عمق الأسرار.
-4. الرد على الارتداد: لو حد بيفكر يسيب الإيمان، رد عليه بمحبة وخوف حقيقي على نفسه، وقوله إن الكنيسة هي "فلك النجاة" وخارجها ضياع للأبدية.
-5. الأسلوب: خلي الشات "خفيف ومرح" وبسيط، بلاش الكلام المجعلص أو المعقد. حسس اللي بيكلّمك إنه بيكلم أخوه أو أبوه اللي بيحبه وعايز مصلحته.
-6. التنسيق: فقرات منظمة، كل فكرة في سطر جديد، واستخدم آيات من الكتاب المقدس (بالعربي فقط) مع ذكر اسم السفر والإصحاح.
-7. الخاتمة الإجبارية: 'تم تدريبي وبرمجتي بواسطة مينا سمير.'`;
+1. المرجع الأساسي: مرجعيتك في كل الإجابات اللاهوتية والتاريخية والطقسية هي (موقع الأنبا تكلا هيمانوت - st-takla.org) و (موقع كنوز قبطية - coptic-treasures.com). يجب أن تكون معلوماتك دقيقة ومستقاة من هذه المصادر الموثوقة.
+2. اللغة: العربية فقط (العامية المصرية الجميلة اللي تفتح النفس). يُمنع منعاً باتاً استخدام أي حرف غير عربي (لا إنجليزي ولا روسي ولا حروف غريبة زي эфеся). لازم الرد يكون عربي صافي 100%.
+3. التفاعل مع الباحثين: لو حد قالك إنه عايز يدخل المسيحية، افرح بيه جداً وهنيه بكلمات مبهجة، وقوله بوضوح: "ده أعظم وأصح قرار في حياتك، إنت اخترت طريق النور والحياة الأبدية الحقيقية".
+4. الطريق للمسيح: وجهه ببساطة: (1) يقرأ الأناجيل الأربعة بانتظام، (2) يزور أقرب كنيسة أرثوذكسية، (3) يطلب يتكلم مع "أب كاهن" عشان يرشده ويشرح له عمق الأسرار.
+5. الرد على الارتداد: لو حد بيفكر يسيب الإيمان، رد عليه بمحبة وخوف حقيقي على نفسه، وقوله إن الكنيسة هي "فلك النجاة" وخارجها ضياع للأبدية.
+6. الأسلوب: خلي الشات "خفيف ومرح" وبسيط، بلاش الكلام المجعلص أو المعقد. حسس اللي بيكلّمك إنه بيكلم أخوه أو أبوه اللي بيحبه وعايز مصلحته.
+7. التنسيق: فقرات منظمة، كل فكرة في سطر جديد، واستخدم آيات من الكتاب المقدس (بالعربي فقط) مع ذكر اسم السفر والإصحاح.
+8. الخاتمة الإجبارية: 'تم تدريبي وبرمجتي بواسطة مينا سمير.'`;
 
 
 
@@ -538,73 +539,63 @@ app.post('/api/chat/ai', async (req, res) => {
             parts: [{ text: row.message }]
         }));
 
-        // Retry logic with key rotation for Gemini
-        let aiResponse = null;
-        let usedGroq = false;
-        const maxAttempts = GEMINI_KEYS.length * 2;
-        const fullHistoryGemini = [
-            { role: "user", parts: [{ text: AI_SYSTEM_PROMPT }] },
-            { role: "model", parts: [{ text: "أهلاً بك! أنا خادمك المساعد من دار الكلمة، وتحت أمرك في أي سؤال يخص إيماننا الأرثوذكسي القبطي الجميل. كيف أقدر أساعدك النهاردة؟ تم تدريبي وبرمجتي بواسطة مينا سمير." }] },
-            ...history.map(h => ({ role: h.role, parts: [{ text: h.parts[0].text }] }))
-        ];
-
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const { model, key } = getAiModel();
+        // Primary: Groq (Llama 3.3 70B for high accuracy and Arabic support)
+        if (groq) {
             try {
-                console.log(`📡 Attempt ${attempt} using Gemini key ending in ...${key.slice(-4)}`);
-                const session = model.startChat({
-                    history: fullHistoryGemini,
-                    generationConfig: {
-                        maxOutputTokens: 1000,
-                        temperature: 0.7,
-                    }
+                console.log(`📡 Using Groq (Primary) for ${senderPhone}`);
+                const groqHistory = history.map(h => ({
+                    role: h.role === "model" ? "assistant" : "user",
+                    content: h.parts[0].text
+                }));
+                const chatCompletion = await groq.chat.completions.create({
+                    messages: [
+                        { role: "system", content: AI_SYSTEM_PROMPT + "\nإضافات هامة: قم ببحث داخلي دقيق قبل الإجابة، تأكد من صحة الآيات والتدقيق اللاهوتي، واجعل إجابتك مفصلة وشاملة." },
+                        ...groqHistory,
+                        { role: "user", content: message }
+                    ],
+                    model: "llama-3.3-70b-versatile",
+                    max_tokens: 1500,
+                    temperature: 0.5 // Lower temperature for higher accuracy
                 });
-                const result = await session.sendMessage(message);
-                aiResponse = result.response.text().trim();
+                aiResponse = chatCompletion.choices[0].message.content.trim();
+                usedGroq = true;
+                console.log("✅ Groq Response Successful");
+            } catch (groqErr) {
+                console.error("⚠️ Groq Primary Failed:", groqErr.message);
+            }
+        }
 
-                if (aiResponse) break; // Success!
-            } catch (e) {
-                const status = e.status || (e.response && e.response.status);
+        // Fallback: Gemini Rotation (Only if Groq failed or wasn't available)
+        if (!aiResponse && GEMINI_KEYS.length > 0) {
+            console.log("� falling back to Gemini rotation...");
+            const fullHistoryGemini = [
+                { role: "user", parts: [{ text: AI_SYSTEM_PROMPT }] },
+                { role: "model", parts: [{ text: "أهلاً بك! أنا خادمك المساعد من دار الكلمة، وتحت أمرك في أي سؤال يخص إيماننا الأرثوذكسي القبطي الجميل. كيف أقدر أساعدك النهاردة؟ تم تدريبي وبرمجتي بواسطة مينا سمير." }] },
+                ...history.map(h => ({ role: h.role, parts: [{ text: h.parts[0].text }] }))
+            ];
+            const maxAttempts = GEMINI_KEYS.length * 2;
 
-                if (status === 429) {
-                    console.log(`⏳ Gemini Key ...${key.slice(-4)} rate limited (429). Rotating to next key...`);
-                    currentKeyIndex = (currentKeyIndex + 1) % GEMINI_KEYS.length;
-                    // Small delay before retry
-                    await new Promise(r => setTimeout(r, 500));
-                } else {
-                    console.error(`⚠️ Gemini Error (Attempt ${attempt}):`, e.message);
-                    // Move to next key anyway if it's not a 429 but still failed
-                    currentKeyIndex = (currentKeyIndex + 1) % GEMINI_KEYS.length;
-
-                    if (attempt >= maxAttempts) {
-                        console.log("🛑 All Gemini attempts failed. Checking Groq fallback...");
-                        if (groq) {
-                            try {
-                                const groqHistory = history.map(h => ({
-                                    role: h.role === "model" ? "assistant" : "user",
-                                    content: h.parts[0].text
-                                }));
-                                const chatCompletion = await groq.chat.completions.create({
-                                    messages: [
-                                        { role: "system", content: AI_SYSTEM_PROMPT },
-                                        ...groqHistory,
-                                        { role: "user", content: message }
-                                    ],
-                                    model: "llama-3.3-70b-versatile", // Top tier model on Groq
-                                    max_tokens: 800,
-                                    temperature: 0.6
-                                });
-                                aiResponse = chatCompletion.choices[0].message.content.trim();
-                                usedGroq = true;
-                                console.log("✅ Groq Fallback successful using Llama 3.3 70B!");
-                                break;
-                            } catch (groqErr) {
-                                console.error("❌ Groq Fallback also failed:", groqErr.message);
-                                throw e;
-                            }
-                        } else {
-                            throw e;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const { model, key } = getAiModel();
+                try {
+                    console.log(`📡 Gemini Fallback Attempt ${attempt} using key ending in ...${key.slice(-4)}`);
+                    const session = model.startChat({
+                        history: fullHistoryGemini,
+                        generationConfig: {
+                            maxOutputTokens: 1500,
+                            temperature: 0.7,
                         }
+                    });
+                    const result = await session.sendMessage(message);
+                    aiResponse = result.response.text().trim();
+                    if (aiResponse) break;
+                } catch (e) {
+                    const status = e.status || (e.response && e.response.status);
+                    if (status === 429) {
+                        currentKeyIndex = (currentKeyIndex + 1) % GEMINI_KEYS.length;
+                        await new Promise(r => setTimeout(r, 500));
+                    } else {
+                        currentKeyIndex = (currentKeyIndex + 1) % GEMINI_KEYS.length;
                     }
                 }
             }
