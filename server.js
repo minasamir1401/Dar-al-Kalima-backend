@@ -552,43 +552,59 @@ app.post('/api/chat/ai', async (req, res) => {
             const { model, key } = getAiModel();
             try {
                 console.log(`📡 Attempt ${attempt} using Gemini key ending in ...${key.slice(-4)}`);
-                const session = model.startChat({ history: fullHistoryGemini });
+                const session = model.startChat({
+                    history: fullHistoryGemini,
+                    generationConfig: {
+                        maxOutputTokens: 1000,
+                        temperature: 0.7,
+                    }
+                });
                 const result = await session.sendMessage(message);
                 aiResponse = result.response.text().trim();
-                break;
+
+                if (aiResponse) break; // Success!
             } catch (e) {
-                if (e.status === 429 && attempt < maxAttempts) {
-                    currentKeyIndex++;
-                    console.log(`⏳ Gemini Key ...${key.slice(-4)} rate limited. Rotating...`);
-                    await new Promise(r => setTimeout(r, 1000));
+                const status = e.status || (e.response && e.response.status);
+
+                if (status === 429) {
+                    console.log(`⏳ Gemini Key ...${key.slice(-4)} rate limited (429). Rotating to next key...`);
+                    currentKeyIndex = (currentKeyIndex + 1) % GEMINI_KEYS.length;
+                    // Small delay before retry
+                    await new Promise(r => setTimeout(r, 500));
                 } else {
-                    console.log("⚠️ All Gemini attempts failed, checking for Groq fallback...");
-                    if (groq) {
-                        try {
-                            const groqHistory = history.map(h => ({
-                                role: h.role === "model" ? "assistant" : "user",
-                                content: h.parts[0].text
-                            }));
-                            const chatCompletion = await groq.chat.completions.create({
-                                messages: [
-                                    { role: "system", content: AI_SYSTEM_PROMPT },
-                                    ...groqHistory,
-                                    { role: "user", content: message }
-                                ],
-                                model: "llama-3.3-70b-versatile",
-                                max_tokens: 500
-                            });
-                            aiResponse = chatCompletion.choices[0].message.content.trim();
-                            usedGroq = true;
-                            console.log("✅ Groq Fallback successful!");
-                            break;
-                        } catch (groqErr) {
-                            console.error("❌ Groq Fallback failed:", groqErr);
-                            throw e; // throw original Gemini error
+                    console.error(`⚠️ Gemini Error (Attempt ${attempt}):`, e.message);
+                    // Move to next key anyway if it's not a 429 but still failed
+                    currentKeyIndex = (currentKeyIndex + 1) % GEMINI_KEYS.length;
+
+                    if (attempt >= maxAttempts) {
+                        console.log("🛑 All Gemini attempts failed. Checking Groq fallback...");
+                        if (groq) {
+                            try {
+                                const groqHistory = history.map(h => ({
+                                    role: h.role === "model" ? "assistant" : "user",
+                                    content: h.parts[0].text
+                                }));
+                                const chatCompletion = await groq.chat.completions.create({
+                                    messages: [
+                                        { role: "system", content: AI_SYSTEM_PROMPT },
+                                        ...groqHistory,
+                                        { role: "user", content: message }
+                                    ],
+                                    model: "llama-3.3-70b-versatile", // Top tier model on Groq
+                                    max_tokens: 800,
+                                    temperature: 0.6
+                                });
+                                aiResponse = chatCompletion.choices[0].message.content.trim();
+                                usedGroq = true;
+                                console.log("✅ Groq Fallback successful using Llama 3.3 70B!");
+                                break;
+                            } catch (groqErr) {
+                                console.error("❌ Groq Fallback also failed:", groqErr.message);
+                                throw e;
+                            }
+                        } else {
+                            throw e;
                         }
-                    } else {
-                        console.warn("🛑 Groq not initialized, no fallback available.");
-                        throw e;
                     }
                 }
             }
